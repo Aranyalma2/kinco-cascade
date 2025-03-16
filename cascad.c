@@ -1,16 +1,16 @@
 
 #define GEPEK_SZAMA 4 // Gepek szama
 
-#define REG_UZEMMOD 1000 // Hutes/Futes
-#define REG_ALAPJEL 1001 // Hutes/Futes alapjel
-#define REG_HOMERSEKLET 1002 // Aktualis homerseklet
-#define REG_HOMERSEKLET_HISZTEREZIS 1003 // Homerseklet hiszterezis
-#define REG_HMV_MINIMUM_HOMERSEKLET 1004 // HMV minimum tartaly homerseklet
-#define REG_HMV_FUTES_FENNTARTAS_STATIKUS 1005 // HMV futesre statikusan fenntartott gepek szama
+#define REG_UZEMMOD 1000                        // Hutes/Futes
+#define REG_ALAPJEL 1001                        // Hutes/Futes alapjel
+#define REG_HOMERSEKLET 1002                    // Aktualis homerseklet
+#define REG_HOMERSEKLET_HISZTEREZIS 1003        // Homerseklet hiszterezis
+#define REG_HMV_MINIMUM_HOMERSEKLET 1004        // HMV minimum tartaly homerseklet
+#define REG_HMV_FUTES_FENNTARTAS_STATIKUS 1005  // HMV futesre statikusan fenntartott gepek szama
 #define REG_HMV_FUTES_FENNTARTAS_DINAMIKUS 1006 // HMV futesre dinamikusan fenntartott gepek szama
-#define REG_HMV_FUTES_MAX_GEP_SZAM 1007 // HMV futesre max gepek szama
+#define REG_HMV_CEL_HOMERSEKLET 1007            // HMV tartaly cel homerseklet
 
-#define REG_FIFO 1010 // LIFO tároló regiszterek kezdete
+#define REG_FIFO 1010         // LIFO tároló regiszterek kezdete
 #define REG_HOSZIVATTYUK 1100 // Hoszivattyu registerek kezdete
 /* ----- REGISZTEREK per gep -----
 0 - engedelyezes
@@ -23,20 +23,25 @@
 7 - HMV inditas
 */
 
+#define DEBUG
+
 #include "macrotypedef.h"
 
 /*************** Utility Functions ***************/
-unsigned int mergeShorts(unsigned short high, unsigned short low) {
+unsigned int mergeShorts(unsigned short high, unsigned short low)
+{
     return ((unsigned int)high << 16) | (unsigned int)low;
 }
 
-void splitInt(unsigned int value, unsigned short *high, unsigned short *low) {
+void splitInt(unsigned int value, unsigned short *high, unsigned short *low)
+{
     *high = (unsigned short)(value >> 16);
     *low = (unsigned short)value;
 }
 
 /****** FIFO START ******/
-typedef struct Stack {
+typedef struct Stack
+{
     short data[GEPEK_SZAMA];
     short top;
     short (*is_empty)(struct Stack *);
@@ -59,7 +64,8 @@ short is_full(Stack *s)
 
 short push(Stack *s, short value)
 {
-    if (is_full(s)) {
+    if (is_full(s))
+    {
         return -1;
     }
     s->top++;
@@ -72,11 +78,13 @@ short pop(Stack *s)
     short value;
     short i;
 
-    if (is_empty(s)) {
+    if (is_empty(s))
+    {
         return -1;
     }
     value = s->data[0];
-    for (i = 0; i < s->top; i++) {
+    for (i = 0; i < s->top; i++)
+    {
         s->data[i] = s->data[i + 1];
     }
     s->top--;
@@ -87,7 +95,8 @@ void export_stack(Stack *s, short *buffer)
 {
     short i;
     buffer[0] = s->top + 1;
-    for (i = 0; i <= s->top; i++) {
+    for (i = 0; i <= s->top; i++)
+    {
         buffer[i + 1] = s->data[i];
     }
 }
@@ -96,7 +105,8 @@ void import_stack(Stack *s, short *buffer)
 {
     short i;
     s->top = buffer[0] - 1;
-    for (i = 0; i <= s->top; i++) {
+    for (i = 0; i <= s->top; i++)
+    {
         s->data[i] = buffer[i + 1];
     }
 }
@@ -114,32 +124,41 @@ void init(Stack *s)
 
 /****** FIFO END ******/
 
-short mode = 0; // 0 = hutes, 1 = futes
-short setpoint = 0; // Homerseklet vezerlo alapjel
-short temperature = 0; // aktualis homerseklet
-short temperature_hysteresis = 0; // Homerseklet hiszterezis => Bekapcsolando gepek szama a homerseklettol differencia alapjan
-short HMV_avg_temperature = 0; // HMV tartaly homerseklet mert atlag
-short HMV_min_temperature = 0; // HMV tartaly homerseklet minimum
-short HMV_FUTES_FENNTARTAS_STATIKUS = 0; // HMV futesre statikusan fenntartott gepek szama
+short mode = 0;                           // 0 = hutes, 1 = futes
+short setpoint = 0;                       // Homerseklet vezerlo alapjel
+short temperature = 0;                    // aktualis homerseklet
+short temperature_hysteresis = 0;         // Homerseklet hiszterezis => Bekapcsolando gepek szama a homerseklettol differencia alapjan
+short HMV_avg_temperature = 0;            // HMV tartaly homerseklet mert atlag
+short HMV_min_temperature = 0;            // HMV tartaly homerseklet minimum
+short HMV_FUTES_FENNTARTAS_STATIKUS = 0;  // HMV futesre statikusan fenntartott gepek szama
 short HMV_FUTES_FENNTARTAS_DINAMIKUS = 0; // HMV futesre dinamikusan fenntartott gepek szama
-short HMV_FUTES_MAX_GEP_SZAM = 0; // HMV futesre max gepek szama
-Stack runtime_fifo; // Gepek bekapcsolasi sorrend
+short HMV_target_temperature = 0;         // HMV tartaly cel homerseklet
 
+Stack normal_on_fifo; // Gepek hutes/futes bekapcsolasi sorrend
+Stack hmv_on_fifo;    // Gepek HMV futes bekapcsolasi sorrend
 
-struct HeatPump {
-    short enable; // Engedelyezes
-    short HMV_feedback; // HMV tartaly futes visszajelzes
+struct HeatPump
+{
+    short enable;          // Engedelyezes
+    short HMV_feedback;    // HMV tartaly futes visszajelzes
     short HMV_temperature; // Mert HMV tartaly homerseklet
-    short error; // Hiba jelzes
-    unsigned int runtime; // Hoszivattyu uzemido
-    short normal_start; //Hutes/futes inditas
-    short HMV_start; // HMV tartaly futes inditas
+    short error;           // Hiba jelzes
+    unsigned int runtime;  // Hoszivattyu uzemido
+    short normal_start;    // Hutes/futes inditas
+    short HMV_start;       // HMV tartaly futes inditas
+};
+
+struct TurnOnHeatPumpNumber
+{
+    short normal;
+    short hmv;
 };
 
 struct HeatPump hoszivattyuk[GEPEK_SZAMA];
 
 // Load controll data from registers
-void load_controll_data(short* buf) {
+void load_controll_data(short *buf)
+{
     mode = buf[0];
     setpoint = buf[1];
     temperature = buf[2];
@@ -147,13 +166,15 @@ void load_controll_data(short* buf) {
     HMV_min_temperature = buf[4];
     HMV_FUTES_FENNTARTAS_STATIKUS = buf[5];
     HMV_FUTES_FENNTARTAS_DINAMIKUS = buf[6];
-    HMV_FUTES_MAX_GEP_SZAM = buf[7];
+    HMV_target_temperature = buf[7];
 }
 
 // Load the heatpump data from registers
-void load_hps(short* buf) {
+void load_hps(short *buf)
+{
     short i = 0;
-    for (i = 0; i < GEPEK_SZAMA; i++) {
+    for (i = 0; i < GEPEK_SZAMA; i++)
+    {
         short machine_idx = i * 8;
         hoszivattyuk[i].enable = buf[machine_idx];
         hoszivattyuk[i].HMV_feedback = buf[machine_idx + 1];
@@ -166,9 +187,11 @@ void load_hps(short* buf) {
 }
 
 // Save nessesery the heatpump data to registers
-void save_hps(short* buf) {
+void save_hps(short *buf)
+{
     short i = 0;
-    for (i = 0; i < GEPEK_SZAMA; i++) {
+    for (i = 0; i < GEPEK_SZAMA; i++)
+    {
         short machine_idx = i * 8;
         buf[machine_idx + 6] = hoszivattyuk[i].normal_start;
         buf[machine_idx + 7] = hoszivattyuk[i].HMV_start;
@@ -176,29 +199,66 @@ void save_hps(short* buf) {
 }
 
 // Check if the HP is able to turn on: enabled, no error
-short can_turn_on(short idx) {
+short can_turn_on(short idx)
+{
     return hoszivattyuk[idx].enable == 1 && hoszivattyuk[idx].error == 0;
 }
 
 // Get the number of heatpumps that able to turn on
-short get_number_of_turnable_hp() {
+short get_number_of_turnable_hp()
+{
     short count = 0;
     short i = 0;
-    for (i = 0; i < GEPEK_SZAMA; i++) {
-        if (can_turn_on(i)) {
+    for (i = 0; i < GEPEK_SZAMA; i++)
+    {
+        if (can_turn_on(i))
+        {
             count++;
         }
     }
     return count;
 }
 
+// Calulate the number of heatpumps that are on in heating or cooling mode (not in HMV mode)
+short get_turned_on_normalmode_hp()
+{
+    short on = 0;
+    short i = 0;
+    for (i = 0; i < GEPEK_SZAMA; i++)
+    {
+        if (can_turn_on(i) && hoszivattyuk[i].normal_start == 1 && hoszivattyuk[i].HMV_start == 0)
+        {
+            on++;
+        }
+    }
+    return on;
+}
+
+// Calulate the number of heatpumps that are in HMV mode
+short get_turned_on_hmvmode_hp()
+{
+    short on = 0;
+    short i = 0;
+    for (i = 0; i < GEPEK_SZAMA; i++)
+    {
+        if (can_turn_on(i) && hoszivattyuk[i].HMV_start == 1 && hoszivattyuk[i].HMV_feedback == 1)
+        {
+            on++;
+        }
+    }
+    return on;
+}
+
 // Get AVG of the HMV temperatures from no error heatpumps
-short get_avg_hmv_temperature() {
+short get_avg_hmv_temperature()
+{
     short sum = 0;
     short count = 0;
     short i = 0;
-    for (i = 0; i < GEPEK_SZAMA; i++) {
-        if (can_turn_on(i)) {
+    for (i = 0; i < GEPEK_SZAMA; i++)
+    {
+        if (can_turn_on(i))
+        {
             sum += hoszivattyuk[i].HMV_temperature;
             count++;
         }
@@ -207,181 +267,304 @@ short get_avg_hmv_temperature() {
 }
 
 // Allocate dynamic number of heatpumps to HMV mode if the AVG HMV temperature is lower than the minimum
-short allocate_hmv() {
+short allocate_hmv()
+{
     short avg = get_avg_hmv_temperature();
-    if (avg < HMV_min_temperature) {
+    if (HMV_FUTES_FENNTARTAS_DINAMIKUS < HMV_FUTES_FENNTARTAS_STATIKUS)
+    {
+        return HMV_FUTES_FENNTARTAS_STATIKUS;
+    }
+    if (avg < HMV_min_temperature || (avg < HMV_target_temperature && get_turned_on_hmvmode_hp() == HMV_FUTES_FENNTARTAS_DINAMIKUS))
+    {
         return HMV_FUTES_FENNTARTAS_DINAMIKUS;
     }
-    else {
+    else
+    {
         return HMV_FUTES_FENNTARTAS_STATIKUS;
     }
 }
 
-
-// Calculate required heatpump  for reaching the setpoint
-short calc_required_chmode_hp(){
-    short number_of_hp = 0;
-        switch (mode) {
-            case 0:
-                if (temperature > setpoint) {
-                    if (temperature_hysteresis != 0) {
-                        short diff = temperature - setpoint;
-                        number_of_hp = ((float)(diff) / temperature_hysteresis + 0.9);
-                    }
-                    else {
-                        number_of_hp = get_number_of_turnable_hp();
-                    }
-                }
-                break;
-            case 1:
-                if (temperature < setpoint) {
-                    if (temperature_hysteresis != 0) {
-                        short diff = setpoint - temperature;
-                        number_of_hp = ((float)(diff) / temperature_hysteresis + 0.9);
-                    }
-                    else {
-                        number_of_hp = get_number_of_turnable_hp();
-                    }
-                }
-                
-                break;
+// Calculate required heatpump for reaching the setpoint and hmvtank temperature
+struct TurnOnHeatPumpNumber calc_required_hp()
+{
+    short normal_mode = 0;
+    switch (mode)
+    {
+    case 0:
+        if (temperature > setpoint)
+        {
+            if (temperature_hysteresis != 0)
+            {
+                short diff = temperature - setpoint;
+                normal_mode = ((float)(diff) / temperature_hysteresis + 0.9);
+            }
+            else
+            {
+                normal_mode = get_number_of_turnable_hp();
+            }
+        }
+        break;
+    case 1:
+        if (temperature < setpoint)
+        {
+            if (temperature_hysteresis != 0)
+            {
+                short diff = setpoint - temperature;
+                normal_mode = ((float)(diff) / temperature_hysteresis + 0.9);
+            }
+            else
+            {
+                normal_mode = get_number_of_turnable_hp();
+            }
         }
 
-    if (number_of_hp > get_number_of_turnable_hp()) {
-        number_of_hp = get_number_of_turnable_hp();
+        break;
     }
 
-    short should_turn_on = number_of_hp + allocate_hmv();
-    if(should_turn_on > get_number_of_turnable_hp()) {
-        short max_available_hp = get_number_of_turnable_hp() - allocate_hmv();
-        return (max_available_hp > 0 ? max_available_hp : 0);
+    if (normal_mode > get_number_of_turnable_hp())
+    {
+        normal_mode = get_number_of_turnable_hp();
     }
 
-    return number_of_hp;
+    short hmv_mode = allocate_hmv();
+
+    short should_turn_on = normal_mode + hmv_mode;
+    if (should_turn_on > get_number_of_turnable_hp())
+    {
+        short max_available_hp = get_number_of_turnable_hp() - hmv_mode;
+        normal_mode = (max_available_hp > 0 ? max_available_hp : 0);
+    }
+    struct TurnOnHeatPumpNumber turn_on_hp = {normal_mode, hmv_mode};
+    return turn_on_hp;
 }
 
-// Calulate the number of heatpumps that are on in heating or cooling mode (not in HMV mode)
-short get_turned_on_chmode_hp() {
-    short on = 0;
-    short i = 0;
-    for (i = 0; i < GEPEK_SZAMA; i++) {
-        if (can_turn_on(i) && hoszivattyuk[i].normal_start == 1 && hoszivattyuk[i].HMV_start == 0) {
-            on++;
-        }
-    }
-    return on;
-}
-
-short get_lowest_runtime_not_on_hp() {
+short get_lowest_runtime_not_on_hp()
+{
     short i;
-    short min = -1;  // Start with an invalid index
+    short min = -1; // Start with an invalid index
 
-    for (i = 0; i < GEPEK_SZAMA; i++) {
-        if (can_turn_on(i) && hoszivattyuk[i].normal_start == 0) {
-            if (min == -1 || hoszivattyuk[i].runtime < hoszivattyuk[min].runtime) {
+    for (i = 0; i < GEPEK_SZAMA; i++)
+    {
+        if (can_turn_on(i) && hoszivattyuk[i].normal_start == 0 && hoszivattyuk[i].HMV_feedback == 0)
+        {
+            if (min == -1 || hoszivattyuk[i].runtime < hoszivattyuk[min].runtime)
+            {
                 min = i;
             }
         }
     }
-    
+
     return min;
 }
 
-// Destribute turn on signals to heatpumps for least runtime if required higher than already on
-void distribute_standard_turnon() {
-    short i, required_hp, on_hp, diff;
-    required_hp = calc_required_chmode_hp();
-    on_hp = get_turned_on_chmode_hp();
-    diff = required_hp - on_hp;
+short get_lowest_runtime_not_on_hp2()
+{
+    short i;
+    short min = -1; // Start with an invalid index
 
-    if (diff > 0) {
-        for (i = 0; i < GEPEK_SZAMA; i++) {
+    for (i = 0; i < GEPEK_SZAMA; i++)
+    {
+        if (can_turn_on(i) && hoszivattyuk[i].normal_start == 0 && hoszivattyuk[i].HMV_start == 0)
+        {
+            if (min == -1 || hoszivattyuk[i].runtime < hoszivattyuk[min].runtime)
+            {
+                min = i;
+            }
+        }
+    }
+
+    return min;
+}
+
+#ifdef DEBUG
+short normal_requested_hp = 0;
+short hmv_requested_hp = 0;
+short norm_diff = 0;
+short hmv_diff = 0;
+short norm_min = -2;
+short hmv_min = -2;
+#endif
+
+// Destribute turn on signals to heatpumps for least runtime if required higher than already on
+void distribute_turnon()
+{
+    short i, normal_on_hp, hmv_on_hp, diff;
+    struct TurnOnHeatPumpNumber required_numbers = calc_required_hp();
+    normal_on_hp = get_turned_on_normalmode_hp();
+    hmv_on_hp = get_turned_on_hmvmode_hp();
+
+#ifdef DEBUG
+    normal_requested_hp = required_numbers.normal;
+    hmv_requested_hp = required_numbers.hmv;
+    norm_diff = required_numbers.normal - normal_on_hp;
+    hmv_diff = required_numbers.hmv - hmv_on_hp;
+#endif
+
+    // Turn on normal mode heatpumps
+    diff = required_numbers.normal - normal_on_hp;
+    if (diff > 0)
+    {
+        for (i = 0; i < GEPEK_SZAMA; i++)
+        {
             short turn_on = get_lowest_runtime_not_on_hp();
-            if (turn_on == -1) {
+            norm_min = turn_on;
+            if (turn_on == -1)
+            {
                 break;
             }
-            if (runtime_fifo.push(&runtime_fifo, turn_on) == -1) {
+            if (normal_on_fifo.push(&normal_on_fifo, turn_on) == -1)
+            {
                 break;
             }
             hoszivattyuk[turn_on].normal_start = 1;
             hoszivattyuk[turn_on].HMV_start = 0;
             diff--;
-            if (diff == 0) {
+            if (diff == 0)
+            {
                 break;
             }
         }
-    } else if (diff < 0) {
-        for (i = 0; i < GEPEK_SZAMA; i++) {
-            short turn_off = runtime_fifo.pop(&runtime_fifo);
-            if (turn_off == -1) {
+    }
+    else if (diff < 0)
+    {
+        for (i = 0; i < GEPEK_SZAMA; i++)
+        {
+            short turn_off = normal_on_fifo.pop(&normal_on_fifo);
+            if (turn_off == -1)
+            {
                 break;
             }
             hoszivattyuk[turn_off].normal_start = 0;
             diff++;
-            if (diff == 0) {
+            if (diff == 0)
+            {
+                break;
+            }
+        }
+    }
+
+    // Turn on HMV mode heatpumps
+    diff = required_numbers.hmv - hmv_on_hp;
+    if (diff > 0)
+    {
+        for (i = 0; i < GEPEK_SZAMA; i++)
+        {
+            short turn_on = get_lowest_runtime_not_on_hp2();
+            hmv_min = turn_on;
+            if (turn_on == -1)
+            {
+                break;
+            }
+            if (hmv_on_fifo.push(&hmv_on_fifo, turn_on) == -1)
+            {
+                break;
+            }
+            hoszivattyuk[turn_on].normal_start = 0;
+            hoszivattyuk[turn_on].HMV_start = 1;
+            diff--;
+            if (diff == 0)
+            {
+                break;
+            }
+        }
+    }
+    else if (diff < 0)
+    {
+        for (i = 0; i < GEPEK_SZAMA; i++)
+        {
+            short turn_off = hmv_on_fifo.pop(&hmv_on_fifo);
+            if (turn_off == -1)
+            {
+                break;
+            }
+            hoszivattyuk[turn_off].HMV_start = 0;
+            diff++;
+            if (diff == 0)
+            {
                 break;
             }
         }
     }
 }
 
-// Set all not normal used heatpump to HMV mode
-void set_HMV_start() {
+void remove_start_on_error()
+{
     short i = 0;
-    short use_max_for_hmv = HMV_FUTES_MAX_GEP_SZAM;
-    for (i = 0; i < GEPEK_SZAMA; i++) {
-        if (use_max_for_hmv <= 0) {
-            hoszivattyuk[i].HMV_start = 0;
-            continue;
-        }
-        if (can_turn_on(i) && hoszivattyuk[i].normal_start == 0) {
-            hoszivattyuk[i].HMV_start = 1;
-            use_max_for_hmv--;
-        }
-    }
-}
-
-void remove_starts() {
-    short i = 0;
-    for (i = 0; i < GEPEK_SZAMA; i++) {
-        if(!can_turn_on(i)) {
+    for (i = 0; i < GEPEK_SZAMA; i++)
+    {
+        if (!can_turn_on(i))
+        {
             hoszivattyuk[i].normal_start = 0;
             hoszivattyuk[i].HMV_start = 0;
         }
     }
 }
 
-int MacroEntry() {
-    // Init LIFO
-    init(&runtime_fifo);
-    // Load FILO data
-    short buff_fifo[GEPEK_SZAMA + 1];
-    ReadLocal("LW", REG_FIFO, GEPEK_SZAMA + 1, (void*)buff_fifo, 0);
-    runtime_fifo.import(&runtime_fifo, buff_fifo);
+// If only 1 heatpump is on working condition, turn both NORMAL and HMV start on.
+void emergency_state()
+{
+    short i;
+    for (i = 0; i < GEPEK_SZAMA; i++)
+    {
+        if (can_turn_on(i))
+        {
+            hoszivattyuk[i].normal_start = 1;
+            hoszivattyuk[i].HMV_start = 1;
+        }
+    }
+}
+
+int MacroEntry()
+{
+    // Init FIFOs
+    init(&normal_on_fifo);
+    init(&hmv_on_fifo);
+    // Load FIFO data
+    short buff_fifo[GEPEK_SZAMA];
+    ReadLocal("LW", REG_FIFO, GEPEK_SZAMA, (void *)buff_fifo, 0);
+    normal_on_fifo.import(&normal_on_fifo, buff_fifo);
+    ReadLocal("LW", REG_FIFO + GEPEK_SZAMA, GEPEK_SZAMA, (void *)buff_fifo, 0);
+    hmv_on_fifo.import(&hmv_on_fifo, buff_fifo);
 
     // Load controll data
     short buf_controll[8];
-    ReadLocal("LW", REG_UZEMMOD, 8, (void*)buf_controll, 0);
+    ReadLocal("LW", REG_UZEMMOD, 8, (void *)buf_controll, 0);
     load_controll_data(buf_controll);
 
     // Load heatpumps data
     short buf_hp[GEPEK_SZAMA * 8];
-    ReadLocal("LW", REG_HOSZIVATTYUK, GEPEK_SZAMA * 8, (void*)buf_hp, 0);
+    ReadLocal("LW", REG_HOSZIVATTYUK, GEPEK_SZAMA * 8, (void *)buf_hp, 0);
     load_hps(buf_hp);
 
-    //Remove any start signal if the heatpump is disabled or has an error
-    remove_starts();
-    // Make standard turnon
-    distribute_standard_turnon();
-    // Set HMV mode
-    set_HMV_start();
+    // Remove any start signal if the heatpump is disabled or has an error
+    remove_start_on_error();
+    // Check if only 1 heatpump is on working condition
+    if (get_number_of_turnable_hp() == 1)
+    {
+        emergency_state();
+    }
+    else
+    {
+        // Distribute turnon signals
+        distribute_turnon();
+    }
 
     // Save heatpumps data
     save_hps(buf_hp);
-    WriteLocal("LW", REG_HOSZIVATTYUK, GEPEK_SZAMA * 8, (void*)buf_hp, 0);
+    WriteLocal("LW", REG_HOSZIVATTYUK, GEPEK_SZAMA * 8, (void *)buf_hp, 0);
 
-    // Save LIFO data
-    runtime_fifo.export(&runtime_fifo, buff_fifo);
-    WriteLocal("LW", REG_FIFO, GEPEK_SZAMA + 1, (void*)buff_fifo, 0);
-    
+    // Save FIFO data
+    normal_on_fifo.export(&normal_on_fifo, buff_fifo);
+    WriteLocal("LW", REG_FIFO, GEPEK_SZAMA, (void *)buff_fifo, 0);
+    hmv_on_fifo.export(&hmv_on_fifo, buff_fifo);
+    WriteLocal("LW", REG_FIFO + GEPEK_SZAMA, GEPEK_SZAMA, (void *)buff_fifo, 0);
+
+#ifdef DEBUG
+    WriteLocal("LW", 10, 1, (void *)&normal_requested_hp, 0);
+    WriteLocal("LW", 11, 1, (void *)&hmv_requested_hp, 0);
+    WriteLocal("LW", 12, 1, (void *)&norm_diff, 0);
+    WriteLocal("LW", 13, 1, (void *)&hmv_diff, 0);
+    WriteLocal("LW", 14, 1, (void *)&norm_min, 0);
+    WriteLocal("LW", 15, 1, (void *)&hmv_min, 0);
+#endif
 }

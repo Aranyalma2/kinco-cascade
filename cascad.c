@@ -23,7 +23,7 @@
 7 - HMV inditas
 */
 
-#define DEBUG
+//#define DEBUG
 
 #include "macrotypedef.h"
 
@@ -46,6 +46,8 @@ typedef struct Stack
     short top;
     short (*is_empty)(struct Stack *);
     short (*is_full)(struct Stack *);
+    short (*clear)(struct Stack *);
+    short (*deleteValue)(struct Stack *, short);
     short (*push)(struct Stack *, short);
     short (*pop)(struct Stack *);
     void (*export)(struct Stack *, short *);
@@ -60,6 +62,36 @@ short is_empty(Stack *s)
 short is_full(Stack *s)
 {
     return (s->top == GEPEK_SZAMA - 1);
+}
+
+short clear(Stack *s)
+{
+    s->top = -1;
+    return 0;
+}
+
+//Delete a value any place from the FIFO, entire stack is shifted
+short deleteValue(Stack *s, short value)
+{
+    short i;
+    short found = 0;
+    for (i = 0; i <= s->top; i++)
+    {
+        if (s->data[i] == value)
+        {
+            found = 1;
+            break;
+        }
+    }
+    if (found)
+    {
+        for (i = i; i < s->top; i++)
+        {
+            s->data[i] = s->data[i + 1];
+        }
+        s->top--;
+    }
+    return found;
 }
 
 short push(Stack *s, short value)
@@ -116,6 +148,8 @@ void init(Stack *s)
     s->top = -1;
     s->is_empty = is_empty;
     s->is_full = is_full;
+    s->clear = clear;
+    s->deleteValue = deleteValue;
     s->push = push;
     s->pop = pop;
     s->export = export_stack;
@@ -241,7 +275,7 @@ short get_turned_on_hmvmode_hp()
     short i = 0;
     for (i = 0; i < GEPEK_SZAMA; i++)
     {
-        if (can_turn_on(i) && hoszivattyuk[i].HMV_start == 1 && hoszivattyuk[i].HMV_feedback == 1)
+        if (can_turn_on(i) && hoszivattyuk[i].HMV_start == 1)
         {
             on++;
         }
@@ -296,7 +330,7 @@ struct TurnOnHeatPumpNumber calc_required_hp()
             if (temperature_hysteresis != 0)
             {
                 short diff = temperature - setpoint;
-                normal_mode = ((float)(diff) / temperature_hysteresis + 0.9);
+                normal_mode = ((float)(diff) / temperature_hysteresis + 0.999999);
             }
             else
             {
@@ -310,7 +344,7 @@ struct TurnOnHeatPumpNumber calc_required_hp()
             if (temperature_hysteresis != 0)
             {
                 short diff = setpoint - temperature;
-                normal_mode = ((float)(diff) / temperature_hysteresis + 0.9);
+                normal_mode = ((float)(diff) / temperature_hysteresis + 0.999999);
             }
             else
             {
@@ -383,6 +417,7 @@ short norm_diff = 0;
 short hmv_diff = 0;
 short norm_min = -2;
 short hmv_min = -2;
+short err = 0;
 #endif
 
 // Destribute turn on signals to heatpumps for least runtime if required higher than already on
@@ -407,7 +442,9 @@ void distribute_turnon()
         for (i = 0; i < GEPEK_SZAMA; i++)
         {
             short turn_on = get_lowest_runtime_not_on_hp();
+            #ifdef DEBUG
             norm_min = turn_on;
+            #endif
             if (turn_on == -1)
             {
                 break;
@@ -450,7 +487,9 @@ void distribute_turnon()
         for (i = 0; i < GEPEK_SZAMA; i++)
         {
             short turn_on = get_lowest_runtime_not_on_hp2();
+            #ifdef DEBUG
             hmv_min = turn_on;
+            #endif
             if (turn_on == -1)
             {
                 break;
@@ -496,6 +535,8 @@ void remove_start_on_error()
         {
             hoszivattyuk[i].normal_start = 0;
             hoszivattyuk[i].HMV_start = 0;
+            deleteValue(&normal_on_fifo, i);
+            deleteValue(&hmv_on_fifo, i);
         }
     }
 }
@@ -503,6 +544,10 @@ void remove_start_on_error()
 // If only 1 heatpump is on working condition, turn both NORMAL and HMV start on.
 void emergency_state()
 {
+    // Clear FIFOs
+    normal_on_fifo.clear(&normal_on_fifo);
+    hmv_on_fifo.clear(&hmv_on_fifo);
+
     short i;
     for (i = 0; i < GEPEK_SZAMA; i++)
     {
@@ -510,6 +555,30 @@ void emergency_state()
         {
             hoszivattyuk[i].normal_start = 1;
             hoszivattyuk[i].HMV_start = 1;
+            normal_on_fifo.push(&normal_on_fifo, i);
+            hmv_on_fifo.push(&hmv_on_fifo, i);
+        }
+    }
+}
+
+void remove_leftover_emergency_on()
+{
+    short i;
+    for (i = 0; i < GEPEK_SZAMA; i++)
+    {
+        if(hoszivattyuk[i].normal_start == 1 && hoszivattyuk[i].HMV_start == 1)
+        {
+            if(hoszivattyuk[i].HMV_feedback == 1)
+            {  
+                hoszivattyuk[i].normal_start = 0;
+                normal_on_fifo.pop(&normal_on_fifo);
+                
+            }
+            else
+            {
+                hoszivattyuk[i].HMV_start = 0;
+                hmv_on_fifo.pop(&hmv_on_fifo);
+            }
         }
     }
 }
@@ -538,13 +607,15 @@ int MacroEntry()
 
     // Remove any start signal if the heatpump is disabled or has an error
     remove_start_on_error();
+
     // Check if only 1 heatpump is on working condition
-    if (get_number_of_turnable_hp() == 1)
+    if (get_number_of_turnable_hp() <= 1)
     {
         emergency_state();
     }
     else
-    {
+    {   
+        remove_leftover_emergency_on();
         // Distribute turnon signals
         distribute_turnon();
     }
@@ -566,5 +637,6 @@ int MacroEntry()
     WriteLocal("LW", 13, 1, (void *)&hmv_diff, 0);
     WriteLocal("LW", 14, 1, (void *)&norm_min, 0);
     WriteLocal("LW", 15, 1, (void *)&hmv_min, 0);
+    WriteLocal("LW", 16, 1, (void *)&err, 0);
 #endif
 }

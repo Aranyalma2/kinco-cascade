@@ -1,4 +1,3 @@
-
 #define GEPEK_SZAMA 4 // Gepek szama
 
 #define REG_UZEMMOD 1000                        // Hutes/Futes
@@ -182,7 +181,7 @@ struct HeatPump
     short HMV_start;       // HMV tartaly futes inditas
 };
 
-struct TurnOnHeatPumpNumber
+struct TurnOnHeatPumpNumbers
 {
     short normal;
     short hmv;
@@ -319,26 +318,25 @@ short allocate_hmv()
 }
 
 // Calculate required heatpump for reaching the setpoint and hmvtank temperature
-struct TurnOnHeatPumpNumber calc_required_hp()
-{
-    short current_on = get_turned_on_normalmode_hp();
-    short max_hp = get_number_of_turnable_hp();
-    short normal_mode = 0;
-
-    if ((mode == 0 && temperature > setpoint) || (mode == 1 && temperature < setpoint))
-    {
-        short temp_diff = (temperature > setpoint) ? (temperature - setpoint) : (setpoint - temperature);
-        short turnon = (temperature_hysteresis > 0) ? ((short)(((float)(temp_diff) / temperature_hysteresis) - current_on) + current_on) : max_hp;
-        normal_mode = (turnon > max_hp) ? max_hp : turnon;
-    }
-    
-    short hmv_mode = allocate_hmv();
-    normal_mode = (normal_mode + hmv_mode > max_hp) ? (max_hp - hmv_mode) : normal_mode;
-    
-    struct TurnOnHeatPumpNumber turn_on_hp = {normal_mode, hmv_mode};
-    return turn_on_hp;
-}
+struct TurnOnHeatPumpNumbers calc_required_hp()
+{
+    short current_on = get_turned_on_normalmode_hp();
+    short max_hp = get_number_of_turnable_hp();
+    short normal_start = 0;
 
+    if ((mode == 0 && temperature > setpoint) || (mode == 1 && temperature < setpoint))
+    {
+        short temp_diff = (temperature > setpoint) ? (temperature - setpoint) : (setpoint - temperature);
+        short turnon = (temperature_hysteresis > 0) ? ((short)(((float)(temp_diff) / temperature_hysteresis) - current_on) + current_on) : max_hp;
+        normal_start = (turnon > max_hp) ? max_hp : turnon;
+    }
+    
+    short hmv_start = allocate_hmv();
+    normal_start = (normal_start + hmv_start > max_hp) ? (max_hp - hmv_start) : normal_start;
+    
+    struct TurnOnHeatPumpNumbers turn_on_hp = {normal_start, hmv_start};
+    return turn_on_hp;
+}
 
 short get_lowest_runtime_not_on_hp()
 {
@@ -392,7 +390,7 @@ short err = 0;
 void distribute_turnon()
 {
     short i, normal_on_hp, hmv_on_hp, diff;
-    struct TurnOnHeatPumpNumber required_numbers = calc_required_hp();
+    struct TurnOnHeatPumpNumbers required_numbers = calc_required_hp();
     normal_on_hp = get_turned_on_normalmode_hp();
     hmv_on_hp = get_turned_on_hmvmode_hp();
 

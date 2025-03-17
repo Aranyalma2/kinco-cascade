@@ -319,58 +319,26 @@ short allocate_hmv()
 }
 
 // Calculate required heatpump for reaching the setpoint and hmvtank temperature
-struct TurnOnHeatPumpNumber calc_required_hp()
-{
-    short normal_mode = 0;
-    switch (mode)
-    {
-    case 0:
-        if (temperature > setpoint)
-        {
-            if (temperature_hysteresis != 0)
-            {
-                short diff = temperature - setpoint;
-                normal_mode = ((float)(diff) / temperature_hysteresis + 0.999999);
-            }
-            else
-            {
-                normal_mode = get_number_of_turnable_hp();
-            }
-        }
-        break;
-    case 1:
-        if (temperature < setpoint)
-        {
-            if (temperature_hysteresis != 0)
-            {
-                short diff = setpoint - temperature;
-                normal_mode = ((float)(diff) / temperature_hysteresis + 0.999999);
-            }
-            else
-            {
-                normal_mode = get_number_of_turnable_hp();
-            }
-        }
+struct TurnOnHeatPumpNumber calc_required_hp()
+{
+    short current_on = get_turned_on_normalmode_hp();
+    short max_hp = get_number_of_turnable_hp();
+    short normal_mode = 0;
+
+    if ((mode == 0 && temperature > setpoint) || (mode == 1 && temperature < setpoint))
+    {
+        short temp_diff = (temperature > setpoint) ? (temperature - setpoint) : (setpoint - temperature);
+        short turnon = (temperature_hysteresis > 0) ? ((short)(((float)(temp_diff) / temperature_hysteresis) - current_on) + current_on) : max_hp;
+        normal_mode = (turnon > max_hp) ? max_hp : turnon;
+    }
+    
+    short hmv_mode = allocate_hmv();
+    normal_mode = (normal_mode + hmv_mode > max_hp) ? (max_hp - hmv_mode) : normal_mode;
+    
+    struct TurnOnHeatPumpNumber turn_on_hp = {normal_mode, hmv_mode};
+    return turn_on_hp;
+}
 
-        break;
-    }
-
-    if (normal_mode > get_number_of_turnable_hp())
-    {
-        normal_mode = get_number_of_turnable_hp();
-    }
-
-    short hmv_mode = allocate_hmv();
-
-    short should_turn_on = normal_mode + hmv_mode;
-    if (should_turn_on > get_number_of_turnable_hp())
-    {
-        short max_available_hp = get_number_of_turnable_hp() - hmv_mode;
-        normal_mode = (max_available_hp > 0 ? max_available_hp : 0);
-    }
-    struct TurnOnHeatPumpNumber turn_on_hp = {normal_mode, hmv_mode};
-    return turn_on_hp;
-}
 
 short get_lowest_runtime_not_on_hp()
 {

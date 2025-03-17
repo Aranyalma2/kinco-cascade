@@ -322,15 +322,18 @@ short allocate_hmv()
 struct TurnOnHeatPumpNumber calc_required_hp()
 {
     short normal_mode = 0;
+    short current_on = get_turned_on_normalmode_hp();
     switch (mode)
     {
     case 0:
         if (temperature > setpoint)
         {
-            if (temperature_hysteresis != 0)
+            if (temperature_hysteresis > 0)
             {
-                short diff = temperature - setpoint;
-                normal_mode = ((float)(diff) / temperature_hysteresis + 0.999999);
+                short temp_diff = temperature - setpoint;
+                short turnon_diff = ((float)(temp_diff) / temperature_hysteresis) - current_on;
+                short turnon = turnon_diff + current_on;
+                normal_mode = (turnon > get_number_of_turnable_hp() ? get_number_of_turnable_hp() : turnon);
             }
             else
             {
@@ -341,10 +344,12 @@ struct TurnOnHeatPumpNumber calc_required_hp()
     case 1:
         if (temperature < setpoint)
         {
-            if (temperature_hysteresis != 0)
+            if (temperature_hysteresis > 0)
             {
-                short diff = setpoint - temperature;
-                normal_mode = ((float)(diff) / temperature_hysteresis + 0.999999);
+                short temp_diff = setpoint - temperature;
+                short turnon_diff = ((float)(temp_diff) / temperature_hysteresis) - current_on;
+                short turnon = turnon_diff + current_on;
+                normal_mode = (turnon > get_number_of_turnable_hp() ? get_number_of_turnable_hp() : turnon);
             }
             else
             {

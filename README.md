@@ -13,6 +13,7 @@
 | LW1005 | HMV fűtés gép fenntartás igény esetén (legalább) (db) |
 | LW1006 | HMV fűtés gép fenntartás igény esetén (maximum) (db) |
 | LW1007 | HMV cél hőmérséklet (°C) |
+| LW1010 - LW1099 | FIFO tárolók |
 
 ### Group 1 Registers
 | Register | Description |
@@ -67,10 +68,21 @@
 |-------|------------|
 | cascad.c | Vezérlési logika, futtatásra egyszeri változás |
 | runtime.c | Üzemóra számláló, futtatásra számol (ajánlott 1 percenként 1x) |
+| simulation.c | A példa program szimulációs vezérlője |
+| template_values.c | A példa program alapérték betöltője. |
 
 ---
 ### Notes
 - This table provides an overview of system registers and macros.
 - Each register is grouped based on function and numbering scheme.
 - Macros define operational logic and runtime counters.
+
+### For Devs
+
+For coding use macros inside ```macros/```.
+Use injector script to update macros inside the playground project.
+
+```sh
+.\inject-playground.sh
+```
 

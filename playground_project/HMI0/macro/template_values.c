@@ -137,5 +137,10 @@ int MacroEntry()
     save_hps(buf_hp);
     WriteLocal("LW", REG_HOSZIVATTYUK, GEPEK_SZAMA * 8, (void *)buf_hp, 0);
 
+    // Reset FIFOs
+    short buff_fifo[GEPEK_SZAMA + 1] = {0};
+    WriteLocal("LW", REG_FIFO, GEPEK_SZAMA + 1, (void *)buff_fifo, 0);
+    WriteLocal("LW", REG_FIFO + GEPEK_SZAMA + 1, GEPEK_SZAMA + 1, (void *)buff_fifo, 0);
+
     return 0;
 }

@@ -22,7 +22,7 @@
 7 - HMV inditas
 */
 
-//#define DEBUG
+#define DEBUG
 
 #include "macrotypedef.h"
 

@@ -1,6 +1,5 @@
 #define GEPEK_SZAMA 4 // Gepek szama
 
-#define REG_SIMULATION 100 // Szimulacio start
 #define REG_SIM_ITERATION 101 // Szimulacio iteracio
 
 #define REG_UZEMMOD 1000                        // Hutes/Futes
@@ -25,11 +24,13 @@
 7 - HMV inditas
 */
 
+//#define DEBUG
+
 #include "macrotypedef.h"
 #include "Math.h"
+#include <time.h>
 
 //-------------------- Simulation datas --------------------
-short sim_started = 0; // Szimulacio elindult-e
 short sim_iteration = 0; // Szimulacio iteracio
 
 
@@ -154,6 +155,19 @@ short get_avg_hmv_temperature()
     return count > 0 ? sum / count : 0;
 }
 
+short any_HMV_on()
+{
+    short i;
+    for (i = 0; i < GEPEK_SZAMA; i++)
+    {
+        if (hoszivattyuk[i].HMV_feedback == 1)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 //Simulation is randomly adjusting controll data and heatpumps enable, error, HMV feedback and HMV temperature
 void make_simulation() {
     //Simulation probability persentage
@@ -166,8 +180,8 @@ void make_simulation() {
     #define SIM_PROB_HYSTERESIS_CHANGE 10
     #define SIM_PROB_HMV_STATIC_CHANGE 10
     #define SIM_PROB_HMV_DYNAMIC_CHANGE 10
-    #define SIM_PROB_HP_ENABLE 90
-    #define SIM_PROB_HP_ERROR 10
+    #define SIM_PROB_HP_ENABLE 95
+    #define SIM_PROB_HP_ERROR 5
     #define SIM_PROB_HP_TEMP_CHANGE 50
 
     /*-------------------- Simulation --------------------
@@ -197,7 +211,7 @@ void make_simulation() {
     if (rand() % 100 < SIM_PROB_SETPOINT_CHANGE) setpoint += (rand() % 2) * 5;
     if (rand() % 100 < SIM_PROB_TEMP_CHANGE) temperature += (mode == 0 ? -1 : 1) * (rand() % 6);
 
-    if (abs(temperature - setpoint) < 5 && rand() % 100 < SIM_PROB_TEMP_DRIFT) {
+    if (((mode == 0 && temperature - setpoint < 5) || (mode == 1 && temperature - setpoint > 5)) && rand() % 100 < SIM_PROB_TEMP_DRIFT) {
         temperature += (mode == 0 ? 1 : -1) * (20 + rand() % 81);
     }
 
@@ -213,7 +227,8 @@ void make_simulation() {
     // Update heatpump data
     short i;
     for (i = 0; i < GEPEK_SZAMA; i++) {
-        if (rand() % 100 > SIM_PROB_HP_ENABLE) hoszivattyuk[i].enable = 1;
+        if (rand() % 100 < SIM_PROB_HP_ENABLE) hoszivattyuk[i].enable = 1;
+        else hoszivattyuk[i].enable = 0;
         if (rand() % 100 < SIM_PROB_HP_ERROR) hoszivattyuk[i].error = 1;
         else hoszivattyuk[i].error = 0;
 
@@ -224,21 +239,25 @@ void make_simulation() {
         }
 
         if (rand() % 100 < SIM_PROB_HP_TEMP_CHANGE) {
-            hoszivattyuk[i].HMV_temperature += hoszivattyuk[i].HMV_feedback ? (rand() % 6) : -(rand() % 6);
+            hoszivattyuk[i].HMV_temperature += any_HMV_on() ? (rand() % 6) : -(rand() % 6);
         }
     }
 
     sim_iteration++;
 
-
-
 }
 
 int MacroEntry()
 {
+    int t = time(NULL);
+    srand(t);
+    #ifdef DEBUG
+    short r = rand();
+    WriteLocal("LW", 17, 1, (void *)&t, 0);
+    WriteLocal("LW", 18, 1, (void *)&r, 0);
+    #endif
 
-    //Load Sim temp datas
-    ReadLocal("LW", REG_SIMULATION, 1, (void *)&sim_started, 0);
+    // Load simulation data
     ReadLocal("LW", REG_SIM_ITERATION, 1, (void *)&sim_iteration, 0);
 
     // Load controll data
@@ -254,7 +273,6 @@ int MacroEntry()
     make_simulation();
 
     // Save simulation data
-    WriteLocal("LW", REG_SIMULATION, 1, (void *)&sim_started, 0);
     WriteLocal("LW", REG_SIM_ITERATION, 1, (void *)&sim_iteration, 0);
 
     // Save controll data

@@ -22,7 +22,7 @@
 7 - HMV inditas
 */
 
-//#define DEBUG
+#define DEBUG
 
 #include "macrotypedef.h"
 
@@ -126,7 +126,7 @@ void export_stack(Stack *s, short *buffer)
 {
     short i;
     buffer[0] = s->top + 1;
-    for (i = 0; i <= s->top; i++)
+    for (i = 0; i < GEPEK_SZAMA; i++)
     {
         buffer[i + 1] = s->data[i];
     }
@@ -136,7 +136,7 @@ void import_stack(Stack *s, short *buffer)
 {
     short i;
     s->top = buffer[0] - 1;
-    for (i = 0; i <= s->top; i++)
+    for (i = 0; i < GEPEK_SZAMA; i++)
     {
         s->data[i] = buffer[i + 1];
     }
@@ -555,10 +555,10 @@ int MacroEntry()
     init(&normal_on_fifo);
     init(&hmv_on_fifo);
     // Load FIFO data
-    short buff_fifo[GEPEK_SZAMA];
-    ReadLocal("LW", REG_FIFO, GEPEK_SZAMA, (void *)buff_fifo, 0);
+    short buff_fifo[GEPEK_SZAMA + 1];
+    ReadLocal("LW", REG_FIFO, GEPEK_SZAMA + 1, (void *)buff_fifo, 0);
     normal_on_fifo.import(&normal_on_fifo, buff_fifo);
-    ReadLocal("LW", REG_FIFO + GEPEK_SZAMA, GEPEK_SZAMA, (void *)buff_fifo, 0);
+    ReadLocal("LW", REG_FIFO + GEPEK_SZAMA + 1, GEPEK_SZAMA + 1, (void *)buff_fifo, 0);
     hmv_on_fifo.import(&hmv_on_fifo, buff_fifo);
 
     // Load controll data
@@ -592,9 +592,9 @@ int MacroEntry()
 
     // Save FIFO data
     normal_on_fifo.export(&normal_on_fifo, buff_fifo);
-    WriteLocal("LW", REG_FIFO, GEPEK_SZAMA, (void *)buff_fifo, 0);
+    WriteLocal("LW", REG_FIFO, GEPEK_SZAMA + 1, (void *)buff_fifo, 0);
     hmv_on_fifo.export(&hmv_on_fifo, buff_fifo);
-    WriteLocal("LW", REG_FIFO + GEPEK_SZAMA, GEPEK_SZAMA, (void *)buff_fifo, 0);
+    WriteLocal("LW", REG_FIFO + GEPEK_SZAMA + 1, GEPEK_SZAMA + 1, (void *)buff_fifo, 0);
 
 #ifdef DEBUG
     WriteLocal("LW", 10, 1, (void *)&normal_requested_hp, 0);

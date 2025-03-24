@@ -1,0 +1,7 @@
+playground_project/tar/
+playground_project/temp/
+playground_project/log.txt
+playground_project/PLCGEDefaultProperties.xml
+playground_project/*.pkgx
+playground_project/*.frp
+*dat~
